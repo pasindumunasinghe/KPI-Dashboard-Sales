@@ -26,12 +26,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       ADMIN_NAME: ${ADMIN_NAME:-Administrator}
-      SEED_ON_START: ${SEED_ON_START:-true}
-      SEED_DATA_DIR: /seed-data
       NODE_ENV: production
-    volumes:
-      # Bundled starter workbooks, loaded once on first start (skipped for datasets that already exist).
-      - ./data:/seed-data:ro
 
   frontend:
     build: ./frontend

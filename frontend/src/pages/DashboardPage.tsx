@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/client';
 import type { Achievement, BreakdownRow, DashboardData } from '../api/types';
 import { QueryState } from '../components/QueryState';
 import { useFilters } from '../FiltersContext';
 import { fmtCurrency, fmtPct, glLabel } from '../format';
+import { UPLOAD_DEFS } from './uploadDefs';
 
 const amountCls = (n: number) => (n < 0 ? 'neg' : '');
 const achievementCls = (pct: number) => (pct >= 100 ? 'pos-good' : 'pos-bad');
@@ -67,6 +70,24 @@ function AchievementRow({ label, a }: { label: string; a: Achievement }) {
   );
 }
 
+function MissingDataBanner({ missing }: { missing: string[] }) {
+  const { canManageData } = useAuth();
+  if (!missing.length) return null;
+  const names = missing.map((key) => UPLOAD_DEFS.find((d) => d.key === key)?.label || key).join(', ');
+  return (
+    <div className="banner" role="status">
+      <strong>No data yet for: {names}.</strong>{' '}
+      {canManageData ? (
+        <>
+          Upload the missing files on the <Link to="/upload">Upload Data</Link> tab — the figures below are calculated on the server from uploaded data only.
+        </>
+      ) : (
+        'Ask a finance user or administrator to upload them. Figures below are calculated from uploaded data only.'
+      )}
+    </div>
+  );
+}
+
 function Dashboard({ data }: { data: DashboardData }) {
   const { kpis: k, allocation, breakdowns } = data;
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -74,6 +95,7 @@ function Dashboard({ data }: { data: DashboardData }) {
 
   return (
     <>
+      <MissingDataBanner missing={data.missingDatasets} />
       <div className="hero-grid">
         <div className="hero-card">
           <div className="hero-label">Primary Sales Without Tax</div>

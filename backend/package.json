@@ -9,7 +9,6 @@
     "build": "tsc -p tsconfig.json && cp -r src/db/migrations dist/db/",
     "start": "node dist/index.js",
     "migrate": "node dist/db/migrate.js",
-    "seed": "node dist/seed.js",
     "test": "vitest run"
   },
   "dependencies": {

@@ -7,7 +7,6 @@ import { authRouter } from './routes/auth';
 import { usersRouter } from './routes/users';
 import { dataRouter } from './routes/data';
 import { uploadsRouter } from './routes/uploads';
-import { seedState } from './seed';
 
 export function createApp() {
   const app = express();
@@ -17,7 +16,7 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', seeding: seedState.running });
+    res.json({ status: 'ok' });
   });
 
   app.use('/api/auth', authRouter);

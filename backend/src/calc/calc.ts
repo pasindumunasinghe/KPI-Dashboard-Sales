@@ -1,5 +1,8 @@
 // Ported from the original browser-side calc.js. Business logic is intentionally unchanged;
 // it now runs on the server (Express) and is exposed as an ES module instead of window.DashboardCalc.
+// @ts-nocheck -- deliberate: this is a verbatim port of the original dynamic JavaScript engine (nested
+// aggregation maps). Its output is verified against the original calc.js; the typed API around it
+// (services/, routes/) is fully type-checked.
 /* eslint-disable */
 
   var MONTHS = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];

@@ -1,4 +1,5 @@
 import { DashboardCalc as Calc } from '../calc/calc';
+import { pool } from '../db/pool';
 import { dataStore } from './dataStore';
 
 export interface DashboardQuery {
@@ -22,6 +23,17 @@ const EXPENSE_BREAKDOWN_CATEGORIES = {
   other: 'Other Expenses',
   badDebt: 'Bad Debtor Provision'
 } as const;
+
+/** Datasets the KPIs cannot be calculated without. */
+const REQUIRED_DATASETS = ['sales', 'target', 'expenses', 'gl', 'mm60', 'vk13'] as const;
+
+async function getMissingDatasets(): Promise<string[]> {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT ON (dataset) dataset, row_count FROM upload_batches ORDER BY dataset, uploaded_at DESC, id DESC`
+  );
+  const loaded = new Set(rows.filter((r) => r.row_count > 0).map((r) => r.dataset as string));
+  return REQUIRED_DATASETS.filter((d) => !loaded.has(d));
+}
 
 export async function getDashboard(q: DashboardQuery) {
   const { dataset, files, settings, lastUpdated } = await dataStore.get();
@@ -68,6 +80,7 @@ export async function getDashboard(q: DashboardQuery) {
 
   return {
     lastUpdated,
+    missingDatasets: await getMissingDatasets(),
     options: { months: dataset.months as string[], mainChannels: dataset.mainChannels as Array<{ main: string; subs: string[] }> },
     costCentersLoaded: !!dataset.costCentersLoaded,
     kpis,

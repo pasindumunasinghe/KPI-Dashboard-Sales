@@ -66,6 +66,7 @@ export interface AllocationRow {
 
 export interface DashboardData {
   lastUpdated: string | null;
+  missingDatasets: string[];
   options: { months: string[]; mainChannels: Array<{ main: string; subs: string[] }> };
   costCentersLoaded: boolean;
   kpis: Kpis;

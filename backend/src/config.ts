@@ -14,8 +14,6 @@ export const config = {
   adminEmail: process.env.ADMIN_EMAIL || '',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   adminName: process.env.ADMIN_NAME || 'Administrator',
-  seedOnStart: (process.env.SEED_ON_START || 'false').toLowerCase() === 'true',
-  seedDataDir: process.env.SEED_DATA_DIR || '/seed-data',
   corsOrigin: process.env.CORS_ORIGIN || '',
   maxUploadMb: parseInt(process.env.MAX_UPLOAD_MB || '200', 10)
 };

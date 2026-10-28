@@ -33,7 +33,7 @@ export function setToken(token: string | null): void {
 
 export class ApiError extends Error {
   status: number;
-  data: { error?: string; missing?: string[]; seeding?: boolean };
+  data: { error?: string; missing?: string[] };
   constructor(status: number, data: ApiError['data']) {
     super(data?.error || `Request failed (${status})`);
     this.status = status;

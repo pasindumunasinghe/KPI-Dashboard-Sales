@@ -19,7 +19,7 @@ docker compose up --build
 
 Open <http://localhost:8080> and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 
-On first start the backend runs migrations, creates the administrator, and loads the workbooks in `./data` (about a minute; the UI waits automatically). Datasets that already exist are never re-seeded. Set `SEED_ON_START=false` to start empty and upload everything from the UI.
+On first start the backend runs migrations and creates the administrator. **The database starts empty** — no data is bundled with the app. Sign in as a Finance/Admin user, open **Upload Data**, and upload your workbooks (Sales, Target, Expenses, G/L mapping, MM60, VK13, plus the optional cost-center, debtor, inventory and exclusion files). Each file is stored in PostgreSQL and every KPI is then calculated by the backend; the dashboard only displays those results. Until the six required files are uploaded, the dashboard shows a banner listing what is missing.
 
 ## Roles
 
@@ -40,7 +40,7 @@ docker run -d --name kpi-db -e POSTGRES_USER=kpi -e POSTGRES_PASSWORD=kpi -e POS
 # backend  (http://localhost:4000)
 cd backend && npm install
 DATABASE_URL=postgres://kpi:kpi@localhost:5432/kpi ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=ChangeMe123 \
-  SEED_ON_START=true SEED_DATA_DIR=../data npm run dev
+  npm run dev
 
 # frontend (http://localhost:5173, proxies /api to :4000)
 cd frontend && npm install && npm run dev

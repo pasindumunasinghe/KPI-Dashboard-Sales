@@ -7,19 +7,9 @@ import { getComparison, getYtd } from '../services/comparison';
 import { deleteSnapshot, listSnapshots, saveSnapshot } from '../services/snapshots';
 import { getSettings, updateSettings } from '../services/settings';
 import { dataStore } from '../services/dataStore';
-import { seedState } from '../seed';
 
 export const dataRouter = Router();
 dataRouter.use(requireAuth);
-
-// Report endpoints are unavailable only while the very first data load is running.
-dataRouter.use((_req, res, next) => {
-  if (seedState.running) {
-    res.status(503).json({ error: 'The initial data load is still in progress. Please retry in a moment.', seeding: true });
-    return;
-  }
-  next();
-});
 
 const MONTHS: string[] = Calc.MONTHS;
 const monthOrAll = z.string().refine((v) => v === 'ALL' || MONTHS.includes(v), 'Invalid month');

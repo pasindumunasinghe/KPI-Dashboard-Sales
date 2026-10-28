@@ -2,7 +2,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ApiError } from './api/client';
 import { App } from './App';
 import { AuthProvider } from './auth/AuthContext';
 import { FiltersProvider } from './FiltersContext';
@@ -13,9 +12,7 @@ const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       staleTime: 15000,
-      // Keep retrying while the first-start data load is running; fail fast otherwise.
-      retry: (count, error) => (error instanceof ApiError && error.status === 503 ? count < 40 : false),
-      retryDelay: 3000
+      retry: false
     }
   }
 });
