@@ -1,11 +1,11 @@
 import { parentPort } from 'worker_threads';
-import { parseUpload, UploadError, type DatasetKey } from '../importers/parse';
+import { parseUpload, UploadError, type DatasetKey, type MonthScope } from '../importers/parse';
 
 // Parsing a large SAP export (hundreds of thousands of rows) is CPU-bound, so it
 // runs here to keep the Express event loop responsive.
-parentPort!.on('message', (msg: { dataset: DatasetKey; buffer: Uint8Array }) => {
+parentPort!.on('message', (msg: { dataset: DatasetKey; buffer: Uint8Array; scope?: MonthScope }) => {
   try {
-    const parsed = parseUpload(msg.dataset, msg.buffer);
+    const parsed = parseUpload(msg.dataset, msg.buffer, msg.scope);
     parentPort!.postMessage({ ok: true, parsed });
   } catch (err) {
     if (err instanceof UploadError) {

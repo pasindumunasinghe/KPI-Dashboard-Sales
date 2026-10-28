@@ -1,5 +1,7 @@
 import * as XLSX from 'xlsx';
 import { DashboardCalc as Calc } from '../calc/calc';
+import type { FiscalMonth } from '../fiscal';
+import { isMonthly } from './monthly';
 
 export const DATASET_KEYS = [
   'sales',
@@ -22,11 +24,16 @@ export interface ParsedColumn {
   values: Array<string | number | null>;
 }
 
+/** The month a monthly dataset is being uploaded for. */
+export type MonthScope = Pick<FiscalMonth, 'month' | 'period' | 'from' | 'to' | 'label'>;
+
 export interface ParsedUpload {
   dataset: DatasetKey;
   table: string;
   columns: ParsedColumn[];
   rowCount: number;
+  /** Set for month-based datasets: the period key the rows belong to. */
+  scope?: MonthScope;
   previewHeader: string[];
   previewRows: Array<Array<string | number>>;
   meta: Record<string, unknown>;
@@ -113,6 +120,13 @@ function isoDate(value: unknown): string | null {
   return d.toISOString().slice(0, 10);
 }
 
+/** Min/max of ISO dates, used to explain why a file has nothing for the chosen month. */
+function rangeText(dates: string[]): string {
+  if (!dates.length) return '';
+  const sorted = [...dates].sort();
+  return ` The file's dates run from ${sorted[0]} to ${sorted[sorted.length - 1]}.`;
+}
+
 function colsFromRecords(spec: Array<[string, ParsedColumn['type']]>, records: Array<Array<string | number | null>>): ParsedColumn[] {
   return spec.map(([name, type], idx) => ({ name, type, values: records.map((r) => r[idx]) }));
 }
@@ -124,18 +138,25 @@ function colsFromRecords(spec: Array<[string, ParsedColumn['type']]>, records: A
 // exactly the same raw SAP/BW exports as before.
 // ---------------------------------------------------------------------------
 
-function parseSales(wb: XLSX.WorkBook): ParsedUpload {
+function parseSales(wb: XLSX.WorkBook, scope: MonthScope): ParsedUpload {
   const canonical: Row[] = Calc.normalizeSalesRows(firstSheetRows(wb));
   assertColumns('sales', canonical[0], 'Sales Report');
   const hm = Calc.headerMap(canonical[0]);
   const records: Array<Array<string | number | null>> = [];
   let skipped = 0;
+  let outside = 0;
+  const seenDates: string[] = [];
   for (let i = 1; i < canonical.length; i++) {
     const r = canonical[i];
     if (!r || !r.length) continue;
     const date = isoDate(Calc.col(hm, r, 'Billing Date'));
     if (!date) {
       skipped++;
+      continue;
+    }
+    seenDates.push(date);
+    if (date < scope.from || date >= scope.to) {
+      outside++;
       continue;
     }
     records.push([
@@ -153,6 +174,9 @@ function parseSales(wb: XLSX.WorkBook): ParsedUpload {
       Calc.num(Calc.col(hm, r, 'Sales Value'))
     ]);
   }
+  if (!records.length) {
+    throw new UploadError(`No sales rows dated in ${scope.label} were found in this file.${rangeText(seenDates)}`);
+  }
   return {
     dataset: 'sales',
     table: 'sales_rows',
@@ -165,8 +189,9 @@ function parseSales(wb: XLSX.WorkBook): ParsedUpload {
       records
     ),
     rowCount: records.length,
+    scope,
     ...preview(canonical[0], canonical.slice(1)),
-    meta: { skippedRowsWithoutValidDate: skipped }
+    meta: { month: scope.month, period: scope.period, ignoredOutsideMonth: outside, skippedRowsWithoutValidDate: skipped }
   };
 }
 
@@ -209,28 +234,44 @@ function parseTarget(wb: XLSX.WorkBook): ParsedUpload {
   };
 }
 
-function parseExpenses(wb: XLSX.WorkBook): ParsedUpload {
+function parseExpenses(wb: XLSX.WorkBook, scope: MonthScope): ParsedUpload {
   const rows = firstSheetRows(wb);
   assertColumns('expenses', rows[0], 'Expenses Report');
   const hm = Calc.headerMap(rows[0]);
   const descCol: string | null = hm['g/l description'] !== undefined ? 'G/L Description' : hm['account description'] !== undefined ? 'Account Description' : null;
   const records: Array<Array<string | number | null>> = [];
+  let outside = 0;
+  let undated = 0;
+  const seenDates: string[] = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || !r.length) continue;
     const companyCode = Calc.col(hm, r, 'Company Code');
     // SAP subtotal / footer rows carry a non-integer Company Code — never a transaction row.
     if (companyCode === undefined || !/^\d+$/.test(str(companyCode))) continue;
+    const postingDate = isoDate(Calc.col(hm, r, 'Posting Date'));
+    if (!postingDate) {
+      undated++;
+      continue;
+    }
+    seenDates.push(postingDate);
+    if (postingDate < scope.from || postingDate >= scope.to) {
+      outside++;
+      continue;
+    }
     records.push([
       str(companyCode),
       str(Calc.col(hm, r, 'G/L Account')),
       str(Calc.col(hm, r, 'Document Number')),
       str(Calc.col(hm, r, 'Document Type')),
-      isoDate(Calc.col(hm, r, 'Posting Date')),
+      postingDate,
       Calc.normalizeCostCenter(Calc.col(hm, r, 'Cost Center')),
       Calc.num(Calc.col(hm, r, 'Amount in Local Currency')),
       descCol ? str(Calc.col(hm, r, descCol)) : ''
     ]);
+  }
+  if (!records.length) {
+    throw new UploadError(`No expense rows posted in ${scope.label} were found in this file.${rangeText(seenDates)}`);
   }
   return {
     dataset: 'expenses',
@@ -240,8 +281,9 @@ function parseExpenses(wb: XLSX.WorkBook): ParsedUpload {
       records
     ),
     rowCount: records.length,
+    scope,
     ...preview(rows[0], rows.slice(1)),
-    meta: {}
+    meta: { month: scope.month, period: scope.period, ignoredOutsideMonth: outside, skippedRowsWithoutValidDate: undated }
   };
 }
 
@@ -361,7 +403,7 @@ function parseCostCenters(wb: XLSX.WorkBook): ParsedUpload {
   };
 }
 
-function parseDebtor(wb: XLSX.WorkBook): ParsedUpload {
+function parseDebtor(wb: XLSX.WorkBook, scope: MonthScope): ParsedUpload {
   const rows = firstSheetRows(wb);
   assertColumns('debtor', rows[0], 'Debtor Summary Report');
   const hm = Calc.headerMap(rows[0]);
@@ -379,22 +421,23 @@ function parseDebtor(wb: XLSX.WorkBook): ParsedUpload {
       Calc.num(Calc.col(hm, r, 'Over 90 Days'))
     ];
     if (!channel && values.every((v) => !v)) continue;
-    records.push([str(Calc.col(hm, r, 'Main Channel')), channel, ...values]);
+    records.push([str(Calc.col(hm, r, 'Main Channel')), channel, ...values, scope.period]);
   }
   return {
     dataset: 'debtor',
     table: 'debtor_rows',
     columns: colsFromRecords(
-      [['main_channel', 'text'], ['sales_channel', 'text'], ['total_amount', 'numeric'], ['d0_30', 'numeric'], ['d30_60', 'numeric'], ['d60_75', 'numeric'], ['d75_90', 'numeric'], ['over_90', 'numeric']],
+      [['main_channel', 'text'], ['sales_channel', 'text'], ['total_amount', 'numeric'], ['d0_30', 'numeric'], ['d30_60', 'numeric'], ['d60_75', 'numeric'], ['d75_90', 'numeric'], ['over_90', 'numeric'], ['period', 'text']],
       records
     ),
     rowCount: records.length,
+    scope,
     ...preview(rows[0], rows.slice(1)),
-    meta: {}
+    meta: { month: scope.month, period: scope.period }
   };
 }
 
-function parseInventory(wb: XLSX.WorkBook): ParsedUpload {
+function parseInventory(wb: XLSX.WorkBook, scope: MonthScope): ParsedUpload {
   const rows = firstSheetRows(wb);
   const hm = Calc.headerMap(rows[0] || []);
   if (hm['channel'] === undefined && hm['sub channel'] === undefined && hm['channel code'] === undefined) {
@@ -402,28 +445,37 @@ function parseInventory(wb: XLSX.WorkBook): ParsedUpload {
   }
   const hasMonthCol = hm['month'] !== undefined;
   const records: Array<Array<string | number | null>> = [];
+  let outside = 0;
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || !r.length) continue;
     const channel = str(Calc.col(hm, r, 'Channel') || Calc.col(hm, r, 'Sub Channel'));
     const code = str(Calc.col(hm, r, 'Channel Code'));
     if (!channel && !code) continue;
-    let month: string | null = null;
+    // A file that carries its own Month column is filtered to the month selected for the upload.
     if (hasMonthCol) {
       const raw = Calc.col(hm, r, 'Month');
-      month = typeof raw === 'number' ? Calc.monthNameFromSerial(raw) || '' : str(raw);
+      const rowMonth = typeof raw === 'number' ? Calc.monthNameFromSerial(raw) || '' : str(raw);
+      if (rowMonth.toLowerCase() !== scope.month.toLowerCase()) {
+        outside++;
+        continue;
+      }
     }
     let over90 = Calc.num(Calc.col(hm, r, 'Over 90 Days Value'));
     if (!over90) over90 = Calc.num(Calc.col(hm, r, 'Total Over 90 Days Value'));
-    records.push([month, channel, code, over90]);
+    records.push([scope.month, channel, code, over90, scope.period]);
+  }
+  if (!records.length) {
+    throw new UploadError(`No inventory rows for ${scope.month} were found in this file.`);
   }
   return {
     dataset: 'inventory',
     table: 'inventory_rows',
-    columns: colsFromRecords([['month', 'text'], ['channel', 'text'], ['channel_code', 'text'], ['over_90_value', 'numeric']], records),
+    columns: colsFromRecords([['month', 'text'], ['channel', 'text'], ['channel_code', 'text'], ['over_90_value', 'numeric'], ['period', 'text']], records),
     rowCount: records.length,
+    scope,
     ...preview(rows[0] || [], rows.slice(1)),
-    meta: { hasMonthColumn: hasMonthCol }
+    meta: { month: scope.month, period: scope.period, hasMonthColumn: hasMonthCol, ignoredOtherMonths: outside }
   };
 }
 
@@ -450,7 +502,9 @@ function parseDistExclusion(wb: XLSX.WorkBook): ParsedUpload {
   };
 }
 
-const PARSERS: Record<DatasetKey, (wb: XLSX.WorkBook) => ParsedUpload> = {
+type Parser = (wb: XLSX.WorkBook, scope: MonthScope) => ParsedUpload;
+
+const PARSERS: Record<DatasetKey, Parser> = {
   sales: parseSales,
   target: parseTarget,
   expenses: parseExpenses,
@@ -463,8 +517,10 @@ const PARSERS: Record<DatasetKey, (wb: XLSX.WorkBook) => ParsedUpload> = {
   distExclusion: parseDistExclusion
 };
 
-export function parseUpload(dataset: DatasetKey, buffer: Uint8Array): ParsedUpload {
+/** `scope` is required for month-based datasets (see importers/monthly.ts) and ignored for reference data. */
+export function parseUpload(dataset: DatasetKey, buffer: Uint8Array, scope?: MonthScope): ParsedUpload {
   const parser = PARSERS[dataset];
   if (!parser) throw new UploadError(`Unknown dataset "${dataset}".`);
-  return parser(readWorkbook(buffer));
+  if (isMonthly(dataset) && !scope) throw new UploadError('Select the month this file belongs to before uploading.');
+  return parser(readWorkbook(buffer), scope as MonthScope);
 }

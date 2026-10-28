@@ -1,5 +1,6 @@
 import { pool } from '../db/pool';
 import { DashboardCalc as Calc } from '../calc/calc';
+import { periodToMonth } from '../fiscal';
 import type { DatasetKey } from '../importers/parse';
 import { getSettings, type AppSettings } from './settings';
 
@@ -25,6 +26,8 @@ export interface DataContext {
   dataset: any;
   files: CalcFiles;
   settings: AppSettings;
+  /** Manually entered Electrician Point amount per month name (e.g. { June: 1000000 }). */
+  electricianByMonth: Record<string, number>;
   lastUpdated: string | null;
 }
 
@@ -85,19 +88,26 @@ const LOADERS: Record<DatasetKey, () => Promise<Rows | undefined>> = {
     return rows.length ? [['Cost Center', 'Name', 'Description', 'Allocation Base', 'Allocated Channel'], ...rows] : [];
   },
   async debtor() {
+    // Each row carries its month name in a trailing "Month" column (rows without a period are ignored).
+    const rows = await queryRows(
+      `SELECT COALESCE(main_channel, ''), sales_channel, total_amount, d0_30, d30_60, d60_75, d75_90, over_90, period
+         FROM debtor_rows WHERE period IS NOT NULL ORDER BY id`
+    );
     return [
-      ['Main Channel', 'Sales Channel', 'Total Amount', '0 - 30 Days', '30 - 60 Days', '60 - 75 Days', '75 - 90 Days', 'Over 90 Days'],
-      ...(await queryRows(
-        'SELECT COALESCE(main_channel, \'\'), sales_channel, total_amount, d0_30, d30_60, d60_75, d75_90, over_90 FROM debtor_rows ORDER BY id'
-      ))
+      ['Main Channel', 'Sales Channel', 'Total Amount', '0 - 30 Days', '30 - 60 Days', '60 - 75 Days', '75 - 90 Days', 'Over 90 Days', 'Month'],
+      ...rows.map((r) => [...r.slice(0, 8), periodToMonth(r[8]) ?? '']).filter((r) => r[8])
     ];
   },
   async inventory() {
-    const rows = await queryRows('SELECT month, COALESCE(channel, \'\'), COALESCE(channel_code, \'\'), over_90_value FROM inventory_rows ORDER BY id');
-    const hasMonth = rows.some((r) => r[0] !== null);
-    return hasMonth
-      ? [['Month', 'Channel', 'Channel Code', 'Over 90 Days Value'], ...rows]
-      : [['Channel', 'Channel Code', 'Over 90 Days Value'], ...rows.map((r) => r.slice(1))];
+    // Always include the Month column: the engine then scopes inventory interest to the selected month.
+    const rows = await queryRows(
+      `SELECT period, COALESCE(channel, ''), COALESCE(channel_code, ''), over_90_value
+         FROM inventory_rows WHERE period IS NOT NULL ORDER BY id`
+    );
+    return [
+      ['Month', 'Channel', 'Channel Code', 'Over 90 Days Value'],
+      ...rows.map((r) => [periodToMonth(r[0]) ?? '', r[1], r[2], r[3]]).filter((r) => r[0])
+    ];
   },
   async distExclusion() {
     const rows = await queryRows('SELECT bill_to_party FROM distributor_exclusions ORDER BY bill_to_party');
@@ -164,11 +174,17 @@ class DataStore {
       vk13ExchangeRates: settings.vk13ExchangeRates
     };
     const dataset = Calc.buildDataset(files);
+    const electricianByMonth: Record<string, number> = {};
+    const { rows: periodRows } = await pool.query('SELECT period, electrician_point FROM periods WHERE electrician_point <> 0');
+    for (const r of periodRows) {
+      const month = periodToMonth(r.period);
+      if (month) electricianByMonth[month] = Number(r.electrician_point);
+    }
     const { rows } = await pool.query(
       `SELECT GREATEST((SELECT max(uploaded_at) FROM upload_batches), (SELECT max(updated_at) FROM settings)) AS last_updated`
     );
     const lastUpdated: Date | null = rows[0].last_updated;
-    return { dataset, files, settings, lastUpdated: lastUpdated ? lastUpdated.toISOString() : null };
+    return { dataset, files, settings, electricianByMonth, lastUpdated: lastUpdated ? lastUpdated.toISOString() : null };
   }
 }
 

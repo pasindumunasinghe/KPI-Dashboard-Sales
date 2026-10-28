@@ -14,6 +14,8 @@ export const config = {
   adminEmail: process.env.ADMIN_EMAIL || '',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   adminName: process.env.ADMIN_NAME || 'Administrator',
+  /** Calendar year in which the financial year starts (April). FY26/27 -> 2026. */
+  fiscalYearStart: parseInt(process.env.FISCAL_YEAR_START || '2026', 10),
   corsOrigin: process.env.CORS_ORIGIN || '',
   maxUploadMb: parseInt(process.env.MAX_UPLOAD_MB || '200', 10)
 };

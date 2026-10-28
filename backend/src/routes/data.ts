@@ -94,7 +94,6 @@ dataRouter.get('/settings', async (_req, res) => {
 
 const settingsBody = z.object({
   mm60SurchargePct: z.number().finite().optional(),
-  electricianPoint: z.number().finite().optional(),
   vk13ExchangeRates: z
     .array(z.object({ currency: z.string().trim().toUpperCase(), rate: z.union([z.string(), z.number()]).transform((v) => String(v)) }))
     .optional()

@@ -1,6 +1,8 @@
 import { pool } from '../db/pool';
 import { DashboardCalc as Calc } from '../calc/calc';
+import { rowsForMonth } from './allocation';
 import { dataStore } from './dataStore';
+import { FINANCIAL_YEAR_LABEL } from '../fiscal';
 
 export interface Snapshot {
   financialYear: string;
@@ -21,7 +23,7 @@ export interface SnapshotSummary {
   createdBy: string | null;
 }
 
-const FINANCIAL_YEAR = 'FY26/27';
+const FINANCIAL_YEAR = FINANCIAL_YEAR_LABEL;
 
 export async function listSnapshots(): Promise<SnapshotSummary[]> {
   const { rows } = await pool.query(
@@ -71,8 +73,8 @@ export async function saveSnapshot(
     gpTargetPct: input.gpTargetPct,
     npatTargetPct: input.npatTargetPct,
     distributorExclusionRows: ctx.files.distributorExclusionRows,
-    debtorRows: ctx.files.debtorRows,
-    electricianPointValue: ctx.settings.electricianPoint,
+    debtorRows: rowsForMonth(ctx.files.debtorRows, input.month),
+    electricianPointValue: ctx.electricianByMonth[input.month] || 0,
     inventoryRows: ctx.files.inventoryRows
   });
 

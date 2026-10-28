@@ -4,6 +4,7 @@ import type {
   DashboardData,
   DashboardParams,
   ManagedUser,
+  PeriodsResponse,
   Role,
   SnapshotSummary,
   UploadResult,
@@ -86,12 +87,20 @@ export const api = {
   updateSettings: (patch: Partial<AppSettings>) => request<{ settings: AppSettings }>('/settings', json('PUT', patch)),
 
   uploads: () => request<UploadsStatus>('/uploads'),
-  upload: (dataset: string, file: File) => {
+  /** `month` is required for month-based datasets (sales, expenses, debtor, inventory). */
+  upload: (dataset: string, file: File, month?: string) => {
     const form = new FormData();
     form.append('file', file);
-    return request<UploadResult>(`/uploads/${dataset}`, { method: 'POST', body: form });
+    return request<UploadResult>(`/uploads/${dataset}${month ? `?month=${encodeURIComponent(month)}` : ''}`, { method: 'POST', body: form });
   },
-  removeUpload: (dataset: string) => request<{ ok: true }>(`/uploads/${dataset}`, { method: 'DELETE' }),
+  removeUpload: (dataset: string, month?: string) =>
+    request<{ ok: true }>(`/uploads/${dataset}${month ? `?month=${encodeURIComponent(month)}` : ''}`, { method: 'DELETE' }),
+
+  periods: () => request<PeriodsResponse>('/periods'),
+  lockPeriod: (month: string) => request<{ ok: true }>(`/periods/${encodeURIComponent(month)}/lock`, json('POST', {})),
+  unlockPeriod: (month: string, note?: string) => request<{ ok: true }>(`/periods/${encodeURIComponent(month)}/unlock`, json('POST', { note })),
+  setElectricianPoint: (month: string, value: number) =>
+    request<{ ok: true }>(`/periods/${encodeURIComponent(month)}/electrician-point`, json('PUT', { value })),
 
   users: () => request<{ users: ManagedUser[] }>('/users'),
   createUser: (u: { email: string; name: string; password: string; role: Role }) =>

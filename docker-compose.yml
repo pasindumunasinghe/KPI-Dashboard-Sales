@@ -29,6 +29,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       ADMIN_NAME: ${ADMIN_NAME:-Administrator}
+      FISCAL_YEAR_START: ${FISCAL_YEAR_START:-2026}
       NODE_ENV: production
 
   frontend:

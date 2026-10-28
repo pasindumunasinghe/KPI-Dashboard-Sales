@@ -1,9 +1,9 @@
 import path from 'path';
 import { Worker } from 'worker_threads';
-import { UploadError, type DatasetKey, type ParsedUpload } from './parse';
+import { UploadError, type DatasetKey, type MonthScope, type ParsedUpload } from './parse';
 
 /** Parses an uploaded workbook in a worker thread (compiled .js, or .ts under tsx). */
-export function parseInWorker(dataset: DatasetKey, buffer: Buffer): Promise<ParsedUpload> {
+export function parseInWorker(dataset: DatasetKey, buffer: Buffer, scope?: MonthScope): Promise<ParsedUpload> {
   const ext = path.extname(__filename);
   const worker = new Worker(path.join(__dirname, '..', 'workers', `parseWorker${ext}`));
   return new Promise<ParsedUpload>((resolve, reject) => {
@@ -14,6 +14,6 @@ export function parseInWorker(dataset: DatasetKey, buffer: Buffer): Promise<Pars
       else reject(new Error(msg.message));
     });
     worker.once('error', reject);
-    worker.postMessage({ dataset, buffer: new Uint8Array(buffer) });
+    worker.postMessage({ dataset, buffer: new Uint8Array(buffer), scope });
   });
 }

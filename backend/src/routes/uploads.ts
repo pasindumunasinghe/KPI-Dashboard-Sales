@@ -4,10 +4,13 @@ import multer from 'multer';
 import { config } from '../config';
 import { pool } from '../db/pool';
 import { requireAuth, requireRole } from '../middleware/auth';
+import { findMonth } from '../fiscal';
 import { DATASET_KEYS, UploadError, type DatasetKey } from '../importers/parse';
+import { isMonthly } from '../importers/monthly';
 import { parseInWorker } from '../importers/runParse';
-import { clearDataset, persistUpload } from '../importers/persist';
+import { clearDataset, clearMonthData, persistUpload } from '../importers/persist';
 import { dataStore } from '../services/dataStore';
+import { isPeriodLocked } from '../services/periods';
 import { computeCostCenterValidation } from '../services/validation';
 
 export const uploadsRouter = Router();
@@ -27,6 +30,7 @@ uploadsRouter.get('/', async (_req, res) => {
   const { rows } = await pool.query(
     `SELECT DISTINCT ON (b.dataset) b.dataset, b.file_name, b.row_count, b.meta, b.uploaded_at, u.name AS uploaded_by
        FROM upload_batches b LEFT JOIN users u ON u.id = b.uploaded_by
+      WHERE b.period IS NULL
       ORDER BY b.dataset, b.uploaded_at DESC, b.id DESC`
   );
   const datasets: Record<string, unknown> = {};
@@ -62,8 +66,23 @@ uploadsRouter.post('/:dataset', requireRole('admin', 'finance'), upload.single('
     return;
   }
 
+  // Month-based datasets are uploaded for one chosen month; a locked month accepts nothing.
+  let scope;
+  if (isMonthly(dataset)) {
+    const month = findMonth(req.query.month);
+    if (!month) {
+      res.status(400).json({ error: 'Select the month this file belongs to before uploading.' });
+      return;
+    }
+    if (await isPeriodLocked(month.period)) {
+      res.status(423).json({ error: `${month.label} is locked. An administrator must unlock it before data can be uploaded.`, locked: true });
+      return;
+    }
+    scope = month;
+  }
+
   try {
-    const parsed = await parseInWorker(dataset, file.buffer);
+    const parsed = await parseInWorker(dataset, file.buffer, scope);
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -80,6 +99,7 @@ uploadsRouter.post('/:dataset', requireRole('admin', 'finance'), upload.single('
     res.status(201).json({
       dataset,
       fileName: file.originalname,
+      month: scope?.month ?? null,
       rowCount: parsed.rowCount,
       preview: { header: parsed.previewHeader, rows: parsed.previewRows },
       meta: parsed.meta,
@@ -96,14 +116,25 @@ uploadsRouter.post('/:dataset', requireRole('admin', 'finance'), upload.single('
 
 uploadsRouter.delete('/:dataset', requireRole('admin', 'finance'), async (req, res) => {
   const dataset = String(req.params.dataset);
-  if (!isDataset(dataset) || !REMOVABLE[dataset]) {
+  if (!isDataset(dataset)) {
+    res.status(404).json({ error: 'Unknown dataset.' });
+    return;
+  }
+  const monthly = isMonthly(dataset);
+  if (!monthly && !REMOVABLE[dataset]) {
     res.status(400).json({ error: 'This dataset cannot be removed.' });
+    return;
+  }
+  const month = monthly ? findMonth(req.query.month) : undefined;
+  if (monthly && !month) {
+    res.status(400).json({ error: 'Select the month whose data should be removed.' });
     return;
   }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await clearDataset(client, REMOVABLE[dataset]!, dataset, req.user!.id);
+    if (monthly) await clearMonthData(client, dataset, month!.month, req.user!.id);
+    else await clearDataset(client, REMOVABLE[dataset]!, dataset, req.user!.id);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

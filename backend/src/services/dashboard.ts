@@ -1,6 +1,8 @@
 import { DashboardCalc as Calc } from '../calc/calc';
 import { pool } from '../db/pool';
+import { computeAllocation } from './allocation';
 import { dataStore } from './dataStore';
+import { listPeriods } from './periods';
 
 export interface DashboardQuery {
   month: string;
@@ -24,29 +26,25 @@ const EXPENSE_BREAKDOWN_CATEGORIES = {
   badDebt: 'Bad Debtor Provision'
 } as const;
 
-/** Datasets the KPIs cannot be calculated without. */
-const REQUIRED_DATASETS = ['sales', 'target', 'expenses', 'gl', 'mm60', 'vk13'] as const;
+/** Reference datasets (not month-specific) the KPIs cannot be calculated without. */
+const REQUIRED_REFERENCE = ['target', 'gl', 'mm60', 'vk13'] as const;
+/** Month-based datasets every month needs to produce meaningful results. */
+const REQUIRED_MONTHLY = ['sales', 'expenses'] as const;
 
-async function getMissingDatasets(): Promise<string[]> {
+async function getMissingReference(): Promise<string[]> {
   const { rows } = await pool.query(
-    `SELECT DISTINCT ON (dataset) dataset, row_count FROM upload_batches ORDER BY dataset, uploaded_at DESC, id DESC`
+    `SELECT DISTINCT ON (dataset) dataset, row_count FROM upload_batches WHERE period IS NULL ORDER BY dataset, uploaded_at DESC, id DESC`
   );
   const loaded = new Set(rows.filter((r) => r.row_count > 0).map((r) => r.dataset as string));
-  return REQUIRED_DATASETS.filter((d) => !loaded.has(d));
+  return REQUIRED_REFERENCE.filter((d) => !loaded.has(d));
 }
 
 export async function getDashboard(q: DashboardQuery) {
-  const { dataset, files, settings, lastUpdated } = await dataStore.get();
+  const { dataset, files, settings, electricianByMonth, lastUpdated } = await dataStore.get();
+  const periods = await listPeriods();
 
-  const allocation = Calc.computeWarehouseDistributionAllocation(dataset, {
-    month: q.month,
-    mainChannel: q.mainChannel,
-    subChannel: q.subChannel,
-    distributorExclusionRows: files.distributorExclusionRows,
-    debtorRows: files.debtorRows,
-    electricianPointValue: settings.electricianPoint,
-    inventoryRows: files.inventoryRows
-  });
+  const ctx = { dataset, files, settings, electricianByMonth, lastUpdated };
+  const allocation = computeAllocation(ctx, { month: q.month, mainChannel: q.mainChannel, subChannel: q.subChannel });
 
   const kpis = Calc.computeKPIs(dataset, {
     month: q.month,
@@ -80,7 +78,17 @@ export async function getDashboard(q: DashboardQuery) {
 
   return {
     lastUpdated,
-    missingDatasets: await getMissingDatasets(),
+    missingDatasets: await getMissingReference(),
+    // Month-based datasets with no data for the selected month (or for any month, on "All Months").
+    missingForMonth: REQUIRED_MONTHLY.filter((key) =>
+      q.month === 'ALL' ? periods.every((p) => !p.data[key].rowCount) : !periods.find((p) => p.month === q.month)?.data[key].rowCount
+    ),
+    monthStatus: Object.fromEntries(
+      periods.map((p) => [
+        p.month,
+        { status: p.status, lockedAt: p.lockedAt, lockedBy: p.lockedBy, hasData: Object.values(p.data).some((d) => d.rowCount > 0) }
+      ])
+    ),
     options: { months: dataset.months as string[], mainChannels: dataset.mainChannels as Array<{ main: string; subs: string[] }> },
     costCentersLoaded: !!dataset.costCentersLoaded,
     kpis,

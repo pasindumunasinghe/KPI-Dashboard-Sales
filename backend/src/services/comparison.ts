@@ -1,4 +1,5 @@
 import { DashboardCalc as Calc } from '../calc/calc';
+import { FINANCIAL_YEAR_LABEL } from '../fiscal';
 import { getLatestSnapshotsByMonth, type Snapshot } from './snapshots';
 
 type Fmt = 'currency' | 'pct';
@@ -110,7 +111,7 @@ export async function getComparison(currentParam?: string, prevParam?: string) {
     : [];
 
   return {
-    financialYear: 'FY26/27',
+    financialYear: FINANCIAL_YEAR_LABEL,
     monthOptions,
     currentMonth,
     prevMonth,
@@ -165,7 +166,7 @@ export async function getYtd(currentParam?: string, comparisonParam?: string) {
   });
 
   return {
-    financialYear: 'FY26/27',
+    financialYear: FINANCIAL_YEAR_LABEL,
     monthOptions,
     currentMonth,
     comparisonMonth,

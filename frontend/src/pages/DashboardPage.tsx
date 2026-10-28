@@ -70,32 +70,35 @@ function AchievementRow({ label, a }: { label: string; a: Achievement }) {
   );
 }
 
-function MissingDataBanner({ missing }: { missing: string[] }) {
+const labelOf = (key: string) => UPLOAD_DEFS.find((d) => d.key === key)?.label || key;
+
+function MissingDataBanner({ missing, missingForMonth, month }: { missing: string[]; missingForMonth: string[]; month: string }) {
   const { canManageData } = useAuth();
-  if (!missing.length) return null;
-  const names = missing.map((key) => UPLOAD_DEFS.find((d) => d.key === key)?.label || key).join(', ');
+  if (!missing.length && !missingForMonth.length) return null;
+  const scope = month === 'ALL' ? 'any month' : month;
   return (
     <div className="banner" role="status">
-      <strong>No data yet for: {names}.</strong>{' '}
-      {canManageData ? (
-        <>
-          Upload the missing files on the <Link to="/upload">Upload Data</Link> tab — the figures below are calculated on the server from uploaded data only.
-        </>
-      ) : (
-        'Ask a finance user or administrator to upload them. Figures below are calculated from uploaded data only.'
-      )}
+      {missing.length > 0 && <div><strong>Reference data not uploaded yet: {missing.map(labelOf).join(', ')}.</strong></div>}
+      {missingForMonth.length > 0 && <div><strong>No {missingForMonth.map(labelOf).join(' or ')} uploaded for {scope}.</strong></div>}
+      <div>
+        {canManageData ? (
+          <>Upload the missing files on the <Link to="/upload">Upload Data</Link> tab — figures below are calculated on the server from the data stored in the database only.</>
+        ) : (
+          'Ask a finance user or administrator to upload them. Figures below are calculated from the data stored in the database only.'
+        )}
+      </div>
     </div>
   );
 }
 
-function Dashboard({ data }: { data: DashboardData }) {
+function Dashboard({ data, month }: { data: DashboardData; month: string }) {
   const { kpis: k, allocation, breakdowns } = data;
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const toggle = (key: string) => setOpen((o) => ({ ...o, [key]: !o[key] }));
 
   return (
     <>
-      <MissingDataBanner missing={data.missingDatasets} />
+      <MissingDataBanner missing={data.missingDatasets} missingForMonth={data.missingForMonth} month={month} />
       <div className="hero-grid">
         <div className="hero-card">
           <div className="hero-label">Primary Sales Without Tax</div>
@@ -247,7 +250,14 @@ export function DashboardPage() {
           <label className="filter-label" htmlFor="f-month">Month</label>
           <select id="f-month" className="select" value={f.month} onChange={(e) => f.setMonth(e.target.value)}>
             <option value="ALL">All Months (FY26/27)</option>
-            {(options?.months || []).map((m) => <option key={m} value={m}>{m}</option>)}
+            {(options?.months || []).map((m) => {
+              const st = q.data?.monthStatus[m];
+              return (
+                <option key={m} value={m}>
+                  {m}{st?.status === 'locked' ? '  🔒' : st && !st.hasData ? '  (no data)' : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div className="filter-group">
@@ -281,10 +291,15 @@ export function DashboardPage() {
         <strong>
           {[f.month === 'ALL' ? 'All Months' : f.month, f.main === 'ALL' ? 'All Main Channels' : f.main, f.sub === 'ALL' ? 'All Sub Channels' : f.sub].join(' · ')}
         </strong>
+        {f.month !== 'ALL' && q.data?.monthStatus[f.month]?.status === 'locked' && (
+          <span className="status-chip error" style={{ marginLeft: 10 }} title={q.data.monthStatus[f.month].lockedBy ? `Locked by ${q.data.monthStatus[f.month].lockedBy}` : undefined}>
+            🔒 Locked
+          </span>
+        )}
       </div>
 
       <QueryState isLoading={q.isLoading} error={q.error}>
-        {q.data && <Dashboard data={q.data} />}
+        {q.data && <Dashboard data={q.data} month={f.month} />}
       </QueryState>
     </div>
   );

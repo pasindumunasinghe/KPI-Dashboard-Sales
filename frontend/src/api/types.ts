@@ -66,7 +66,11 @@ export interface AllocationRow {
 
 export interface DashboardData {
   lastUpdated: string | null;
+  /** Reference datasets (Target, G/L, MM60, VK13) not uploaded yet. */
   missingDatasets: string[];
+  /** Month-based datasets (sales, expenses) with no data for the selected month. */
+  missingForMonth: string[];
+  monthStatus: Record<string, { status: 'open' | 'locked'; lockedAt: string | null; lockedBy: string | null; hasData: boolean }>;
   options: { months: string[]; mainChannels: Array<{ main: string; subs: string[] }> };
   costCentersLoaded: boolean;
   kpis: Kpis;
@@ -144,7 +148,33 @@ export interface ExchangeRate {
 export interface AppSettings {
   mm60SurchargePct: number;
   vk13ExchangeRates: ExchangeRate[];
+}
+
+export type MonthlyDataset = 'sales' | 'expenses' | 'debtor' | 'inventory';
+
+export interface MonthDatasetInfo {
+  rowCount: number;
+  fileName: string | null;
+  uploadedAt: string | null;
+  uploadedBy: string | null;
+}
+
+export interface PeriodInfo {
+  month: string;
+  period: string;
+  label: string;
+  status: 'open' | 'locked';
+  lockedAt: string | null;
+  lockedBy: string | null;
   electricianPoint: number;
+  data: Record<MonthlyDataset, MonthDatasetInfo>;
+  lastEvent: { action: 'lock' | 'unlock'; by: string | null; at: string; note: string | null } | null;
+}
+
+export interface PeriodsResponse {
+  financialYear: string;
+  monthlyDatasets: Record<MonthlyDataset, string>;
+  periods: PeriodInfo[];
 }
 
 export interface CostCenterValidation {
@@ -173,6 +203,7 @@ export interface UploadsStatus {
 export interface UploadResult {
   dataset: string;
   fileName: string;
+  month: string | null;
   rowCount: number;
   preview: { header: string[]; rows: Array<Array<string | number>> };
   meta: Record<string, unknown>;

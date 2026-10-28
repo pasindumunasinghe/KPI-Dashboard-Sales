@@ -8,7 +8,6 @@ export interface ExchangeRate {
 export interface AppSettings {
   mm60SurchargePct: number;
   vk13ExchangeRates: ExchangeRate[];
-  electricianPoint: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -19,14 +18,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { currency: 'GBP', rate: '410.00' },
     { currency: 'JPY', rate: '2.15' },
     { currency: 'CNY', rate: '45.00' }
-  ],
-  electricianPoint: 0
+  ]
 };
 
 const KEYS: Record<keyof AppSettings, string> = {
   mm60SurchargePct: 'mm60_surcharge_pct',
-  vk13ExchangeRates: 'vk13_exchange_rates',
-  electricianPoint: 'electrician_point'
+  vk13ExchangeRates: 'vk13_exchange_rates'
 };
 
 export async function getSettings(): Promise<AppSettings> {
@@ -34,8 +31,7 @@ export async function getSettings(): Promise<AppSettings> {
   const byKey = new Map<string, unknown>(rows.map((r) => [r.key as string, r.value]));
   return {
     mm60SurchargePct: (byKey.get(KEYS.mm60SurchargePct) as number | undefined) ?? DEFAULT_SETTINGS.mm60SurchargePct,
-    vk13ExchangeRates: (byKey.get(KEYS.vk13ExchangeRates) as ExchangeRate[] | undefined) ?? DEFAULT_SETTINGS.vk13ExchangeRates,
-    electricianPoint: (byKey.get(KEYS.electricianPoint) as number | undefined) ?? DEFAULT_SETTINGS.electricianPoint
+    vk13ExchangeRates: (byKey.get(KEYS.vk13ExchangeRates) as ExchangeRate[] | undefined) ?? DEFAULT_SETTINGS.vk13ExchangeRates
   };
 }
 

@@ -19,7 +19,20 @@ docker compose up --build
 
 Open <http://localhost:8080> and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 
-On first start the backend runs migrations and creates the administrator. **The database starts empty** — no data is bundled with the app. Sign in as a Finance/Admin user, open **Upload Data**, and upload your workbooks (Sales, Target, Expenses, G/L mapping, MM60, VK13, plus the optional cost-center, debtor, inventory and exclusion files). Each file is stored in PostgreSQL and every KPI is then calculated by the backend; the dashboard only displays those results. Until the six required files are uploaded, the dashboard shows a banner listing what is missing.
+On first start the backend runs migrations and creates the administrator. **The database starts empty** — no data is bundled with the app. Sign in as a Finance/Admin user and open **Upload Data**. Each file is stored in PostgreSQL and every KPI is then calculated by the backend; the dashboard only displays those results. Until the required data is uploaded, the dashboard shows a banner listing what is missing.
+
+## Monthly uploads and locking
+
+Upload Data has two parts:
+
+- **Monthly data** — Sales, Expenses, Debtor Summary and Inventory reports, plus the month's *Electrician Point*. **Choose the month first**, then upload. An upload replaces only that month (rows dated in other months are ignored and reported; a file with nothing for the chosen month is rejected with its actual date range).
+- **Reference data** — Target, G/L mapping, MM60, VK13, Cost Centers, exclusion list, MM60 surcharge and exchange rates. These are not month-specific and apply to every month.
+
+**Locking a month** (Administrator or Finance, once Sales and Expenses are uploaded) blocks uploads, replacements, removals and edits for that month. Only an **Administrator** can unlock it (an optional reason is kept in the audit trail, table `period_events`). The rule is enforced by the API *and* by database triggers, so direct edits to a locked month — for example in pgAdmin — are refused too.
+
+Reference data is deliberately not frozen by a month lock. Changing it (for example MM60 costs) can change results for locked months, so treat it as a controlled change.
+
+The dashboard's **Month** filter shows the results calculated from the data stored for that month (🔒 marks locked months); "All Months" aggregates every month that has data. The financial year starts in April of `FISCAL_YEAR_START` (default 2026 = FY26/27).
 
 ## Open the database in pgAdmin
 
@@ -68,11 +81,12 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except `/au
 - `POST /auth/login`, `GET /auth/me`, `POST /auth/change-password`
 - `GET /dashboard?month&main&sub&gp&npat`, `GET /comparison`, `GET /ytd`
 - `GET|POST /snapshots`, `DELETE /snapshots/:id` (write: admin, finance)
-- `GET|PUT /settings` (MM60 surcharge, VK13 exchange rates, electrician point; write: admin, finance)
-- `GET /uploads`, `POST /uploads/:dataset`, `DELETE /uploads/costCenters` (write: admin, finance)
+- `GET|PUT /settings` (MM60 surcharge, VK13 exchange rates; write: admin, finance)
+- `GET /periods`, `POST /periods/:month/lock` (admin, finance), `POST /periods/:month/unlock` (admin), `PUT /periods/:month/electrician-point`
+- `GET /uploads`, `POST /uploads/:dataset` (add `?month=June` for sales, expenses, debtor, inventory), `DELETE /uploads/:dataset` (month-based: `?month=`; or `costCenters`) (write: admin, finance). A locked month answers `423`.
 - `GET|POST /users`, `PATCH|DELETE /users/:id` (admin)
 
-Datasets: `sales`, `target`, `expenses`, `gl`, `mm60`, `vk13`, `distExclusion`, `costCenters`, `debtor`, `inventory`. Each upload replaces that dataset, as in the original app, and is recorded in `upload_batches`.
+Datasets: `sales`, `target`, `expenses`, `gl`, `mm60`, `vk13`, `distExclusion`, `costCenters`, `debtor`, `inventory`. Reference datasets are replaced as a whole, month-based ones per month; every upload is recorded in `upload_batches`.
 
 ## Legacy files
 
