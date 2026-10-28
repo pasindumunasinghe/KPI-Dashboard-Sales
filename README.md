@@ -21,6 +21,19 @@ Open <http://localhost:8080> and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 
 On first start the backend runs migrations and creates the administrator. **The database starts empty** — no data is bundled with the app. Sign in as a Finance/Admin user, open **Upload Data**, and upload your workbooks (Sales, Target, Expenses, G/L mapping, MM60, VK13, plus the optional cost-center, debtor, inventory and exclusion files). Each file is stored in PostgreSQL and every KPI is then calculated by the backend; the dashboard only displays those results. Until the six required files are uploaded, the dashboard shows a banner listing what is missing.
 
+## Open the database in pgAdmin
+
+The database port is published on `127.0.0.1:${DB_PORT:-5432}` (this machine only). In pgAdmin choose **Servers → Register → Server…** and enter:
+
+| Field | Value |
+|---|---|
+| Host name/address | `localhost` |
+| Port | `5432` (or your `DB_PORT`) |
+| Maintenance database | `kpi` (`POSTGRES_DB`) |
+| Username / Password | `POSTGRES_USER` / `POSTGRES_PASSWORD` from `.env` |
+
+Then browse **kpi → Schemas → public → Tables**. Run `docker compose up -d db` after pulling this change to apply the new port mapping. Never publish this port on a public server. Direct edits bypass the app's validation, and the backend caches calculation inputs, so upload a file or change a setting to refresh them.
+
 ## Roles
 
 | Role | View dashboards | Upload data, settings, snapshots | Manage users |
