@@ -63,4 +63,4 @@ Datasets: `sales`, `target`, `expenses`, `gl`, `mm60`, `vk13`, `distExclusion`, 
 
 ## Legacy files
 
-`Sales Dashboard.dc.html`, `calc.js`, `support.js`, `KPI Dashboard - Standalone.html` and `uploads/` are the original single-page app, kept for reference.
+`Sales Dashboard.dc.html`, `calc.js`, `support.js` and `KPI Dashboard - Standalone.html` are the original single-page app, kept for reference.
