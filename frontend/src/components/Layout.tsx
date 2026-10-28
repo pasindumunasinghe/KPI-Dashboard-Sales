@@ -51,7 +51,9 @@ export function Layout() {
 
       <Outlet />
 
-      <footer className="footer">Orel Electrical · Sales &amp; Profitability Dashboard · FY26/27</footer>
+      <footer className="footer">
+        Orel Electrical · Sales &amp; Profitability Dashboard · FY26/27 · monthly uploads &amp; locking · build {__BUILD_TIME__.slice(0, 16).replace('T', ' ')} UTC
+      </footer>
     </div>
   );
 }

@@ -91,6 +91,49 @@ function MissingDataBanner({ missing, missingForMonth, month }: { missing: strin
   );
 }
 
+/** Shows, for the selected month, whether it is locked and which monthly files are stored. */
+function MonthStatusBar({ month }: { month: string }) {
+  const { canManageData } = useAuth();
+  const periods = useQuery({ queryKey: ['periods'], queryFn: api.periods });
+  if (!periods.data) return null;
+  const all = periods.data.periods;
+  const labels = periods.data.monthlyDatasets;
+
+  if (month === 'ALL') {
+    const withData = all.filter((p) => Object.values(p.data).some((d) => d.rowCount > 0));
+    const locked = all.filter((p) => p.status === 'locked');
+    return (
+      <div className="month-bar" role="status">
+        <strong>All Months</strong>
+        <span className="muted">
+          {withData.length} month{withData.length === 1 ? '' : 's'} with data · {locked.length} locked{locked.length ? ` (${locked.map((p) => p.month).join(', ')})` : ''}. Select a month to see its lock status and uploaded files.
+        </span>
+      </div>
+    );
+  }
+  const p = all.find((x) => x.month === month);
+  if (!p) return null;
+  const locked = p.status === 'locked';
+  return (
+    <div className={'month-bar' + (locked ? ' locked' : '')} role="status">
+      <strong>{p.label}</strong>
+      <span className={'status-chip ' + (locked ? 'error' : 'done')}>{locked ? '🔒 Locked' : 'Open'}</span>
+      {(Object.keys(labels) as Array<keyof typeof labels>).map((key) => (
+        <span key={key} className={'status-chip ' + (p.data[key].rowCount ? 'done' : '')} title={p.data[key].fileName ?? undefined}>
+          {p.data[key].rowCount ? '✓' : '○'} {labels[key].replace(' Report', '').replace(' Summary', '')}
+          {p.data[key].rowCount ? ` · ${p.data[key].rowCount.toLocaleString()} rows` : ''}
+        </span>
+      ))}
+      <span className="muted">
+        {locked
+          ? `Locked${p.lockedBy ? ` by ${p.lockedBy}` : ''}${p.lockedAt ? ` on ${new Date(p.lockedAt).toLocaleDateString()}` : ''} — data can't be changed until an administrator unlocks it.`
+          : 'Open — data for this month can still be uploaded or replaced.'}
+      </span>
+      {canManageData && <Link to="/upload" className="month-bar-link">Manage {p.month} uploads / lock →</Link>}
+    </div>
+  );
+}
+
 function Dashboard({ data, month }: { data: DashboardData; month: string }) {
   const { kpis: k, allocation, breakdowns } = data;
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -297,6 +340,8 @@ export function DashboardPage() {
           </span>
         )}
       </div>
+
+      <MonthStatusBar month={f.month} />
 
       <QueryState isLoading={q.isLoading} error={q.error}>
         {q.data && <Dashboard data={q.data} month={f.month} />}

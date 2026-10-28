@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  define: { __BUILD_TIME__: JSON.stringify(new Date().toISOString()) },
   server: {
     port: 5173,
     // In development the API runs on :4000; in Docker, nginx does this proxying.
