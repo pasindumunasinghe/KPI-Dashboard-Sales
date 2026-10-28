@@ -49,7 +49,7 @@
 
   // Derive Main Channel from raw "Distribution Channel" code + "Sales Employee",
   // per the client's channel-mapping formula.
-  var MAIN_CHANNEL_MAP = {
+  var MAIN_CHANNEL_MAP: Record<string, string> = {
     '10': 'Distribution', '11': 'Distribution', '12': 'Distribution', '14': 'Distribution',
     '13': 'Digital', '15': 'Digital', '36': 'Digital',
     '20': 'Export', '21': 'Export', '71': 'Export',
@@ -105,7 +105,7 @@
     var headerRow = rawRows[headerRowIdx];
     var seen: any = {};
     var canonical: any[] = [];
-    var RENAME_FIRST_DUP = { 'Distribution Channel': 'Distribution Channel1', 'Bill-to Party': 'Bill-to Party1', 'Sales Employee': 'Sales Employee1', 'Plant': 'Plant1', 'Material': 'Material1' };
+    var RENAME_FIRST_DUP: Record<string, string> = { 'Distribution Channel': 'Distribution Channel1', 'Bill-to Party': 'Bill-to Party1', 'Sales Employee': 'Sales Employee1', 'Plant': 'Plant1', 'Material': 'Material1' };
     var RENAME_DIRECT: any = {};
     for (var c = 0; c < headerRow.length; c++) {
       var name = String(headerRow[c] || '').trim();
@@ -165,7 +165,7 @@
     if (qtyIdx !== -1) canonical[qtyIdx] = 'Qty';
     if (netSalesVolIdx !== -1) canonical[netSalesVolIdx] = 'Sales Value';
 
-    var allowedOrgs = { 'orel corporation': true, 'orel ceylon (pvt) ltd': true };
+    var allowedOrgs: Record<string, boolean> = { 'orel corporation': true, 'orel ceylon (pvt) ltd': true };
     if (salesOrgIdx !== -1) {
       normalizedRows = normalizedRows.filter(function (r: any) {
         return r && allowedOrgs[String(r[salesOrgIdx] || '').trim().toLowerCase()];
@@ -495,10 +495,11 @@
     var byGL: any = {};
     if (!expenseRows || expenseRows.length < 2) return { agg: agg, byGL: byGL };
     var hm = headerMap(expenseRows[0]);
-    var allowedSet = null;
+    var allowedSet: Record<string, boolean> | null = null;
     if (allowedCompanyCodes && allowedCompanyCodes.length) {
-      allowedSet = {};
-      allowedCompanyCodes.forEach(function (c: any) { allowedSet[String(c).trim()] = true; });
+      var companySet: Record<string, boolean> = {};
+      allowedSet = companySet;
+      allowedCompanyCodes.forEach(function (c: any) { companySet[String(c).trim()] = true; });
     }
     var descCol = hm['g/l description'] !== undefined ? 'G/L Description' : (hm['account description'] !== undefined ? 'Account Description' : null);
     for (var i = 1; i < expenseRows.length; i++) {
@@ -541,7 +542,7 @@
   // GL lines that fold in allocated Warehouse/Distribution-section costs, per spec.
   // Labels used only as a fallback if the GL Category Mapping file has no name for
   // these codes yet (so the breakdown row is still labeled correctly).
-  var ALLOCATION_GL_FALLBACK_NAMES = {
+  var ALLOCATION_GL_FALLBACK_NAMES: Record<string, string> = {
     '680029': 'Transport Charge Selling & Distribution',
     '680008': 'Rebate & Discount Expenses',
     '700004': 'Interest on STB'
@@ -627,7 +628,7 @@
     return patterns.some(function (p: any) { return p.indexOf('X') === -1 ? cc === p : ccPatternToRegex(p).test(cc); });
   }
   // Channel label aliases: spec wording -> actual channel labels used by Target/Sales data.
-  var CC_CHANNEL_ALIAS = { 'Institution': 'Institutions', 'Qbit': 'QBIT', 'Factory Outlet': 'Factory Outlet - Eka' };
+  var CC_CHANNEL_ALIAS: Record<string, string> = { 'Institution': 'Institutions', 'Qbit': 'QBIT', 'Factory Outlet': 'Factory Outlet - Eka' };
   function ccChannelLabel(name: any) { return CC_CHANNEL_ALIAS[name] || name; }
 
   var CC_RANGE_DEFS = [
@@ -645,7 +646,7 @@
   ];
   // Direct-assignment table: exact codes first, wildcard patterns after. Both 1100
   // and 1600 direct-assigned children keep their own expense (never re-split).
-  var CC_DIRECT_EXACT = {
+  var CC_DIRECT_EXACT: Record<string, string> = {
     '1100700201': 'Direct Dealer', '1100700202': 'Distributor', '1100700203': 'Digital',
     '1100700204': 'Wireman, Ruhunu & PVC', '1100700205': 'Modern Trade',
     '1100700901': 'Direct Dealer', '1100700902': 'Distributor',
@@ -701,7 +702,7 @@
   // (incl. SAP subtotal/footer rows with a non-integer Company Code) never count
   // as a valid transaction row at all.
   function matchCostCenterExpenses(expenseRows: any, ccResult: any, allowedCompanyCodes: any) {
-    var out = { validTransactionRows: 0, matchedRows: [], matchedNetAmount: 0, unmatchedCostCenters: {} };
+    var out: any = { validTransactionRows: 0, matchedRows: [], matchedNetAmount: 0, unmatchedCostCenters: {} };
     if (!expenseRows || expenseRows.length < 2 || !ccResult || !ccResult.uniqueCount) return out;
     var hm = headerMap(expenseRows[0]);
     var allowedSet: any = {};
@@ -752,7 +753,7 @@
   }
 
   function ccEligibleAllChannels(ccResult: any) {
-    var exclude = { 'all channels': true, 'direct dealer & distributor': true };
+    var exclude: Record<string, boolean> = { 'all channels': true, 'direct dealer & distributor': true };
     var seen: any = {};
     var list: any[] = [];
     Object.keys(ccResult.rowsByCC).forEach(function (cc: any) {
@@ -776,7 +777,7 @@
   // never double-allocated. Purely for internal reconciliation/validation — does
   // not feed any displayed KPI.
   function computeProductCompanyExpenses(dataset: any, months: any, matchResult: any, ccResult: any) {
-    var result = { channelTotals: {}, unallocatedTotal: 0, warnings: [] };
+    var result: any = { channelTotals: {}, unallocatedTotal: 0, warnings: [] };
     if (!matchResult || !matchResult.matchedRows.length) return result;
     matchResult.matchedRows.forEach(function (row: any) {
       var cc = row.cc, amount = row.amount;
@@ -788,7 +789,7 @@
         return;
       }
       // range, global, or pool1600 — split across the resolved channel group by Target %
-      var channels = resolved.type === 'global' ? ccEligibleAllChannels(ccResult) : resolved.channels;
+      var channels: any[] = resolved.type === 'global' ? ccEligibleAllChannels(ccResult) : (resolved.channels || []);
       var pctMap = ccNormalizedTargetPct(dataset, months, channels);
       if (!pctMap) {
         result.unallocatedTotal += amount;
@@ -823,7 +824,7 @@
         pushRecord(resolved.channel, row.amount);
         return;
       }
-      var channels = resolved.type === 'global' ? ccEligibleAllChannels(ccResult) : resolved.channels;
+      var channels: any[] = resolved.type === 'global' ? ccEligibleAllChannels(ccResult) : (resolved.channels || []);
       var pctMap = ccNormalizedTargetPct(dataset, [row.month], channels);
       if (!pctMap) return; // no target data for this month/group — retained unallocated, matches reconciliation rule
       channels.forEach(function (ch: any) { pushRecord(ch, row.amount * pctMap[ch]); });
@@ -904,7 +905,7 @@
     return total;
   }
 
-  function sumExpenseCategory(dataset: any, months: any, category: any, mainFilter: any, subFilter: any) {
+  function sumExpenseCategory(dataset: any, months: any, category: any, mainFilter: any = 'ALL', subFilter: any = 'ALL') {
     var main = mainFilter || 'ALL', sub = subFilter || 'ALL';
     // ALL/ALL always takes this identical, untouched path — guarantees expense
     // totals never change when no channel filter is applied.
@@ -1004,7 +1005,7 @@
   // ---- Debtor Interest (Over-60-day debtor aging) ----
   // Independent from Warehouse/Distribution Cost logic — computed from the
   // Debtor Summary Report upload, keyed directly by its Sales Channel column.
-  var DEBTOR_CHANNEL_MAP = {
+  var DEBTOR_CHANNEL_MAP: Record<string, string> = {
     'DIRECT DEALER': 'Direct Dealer',
     'DISTRIBUTOR': 'Distributor',
     'WIREMAN, RUHUNU & PVC': 'Wireman, Ruhunu & PVC',
@@ -1042,7 +1043,7 @@
   // Debtor Interest = Over 60 Debtor Value * 1%. No Company Code filter (report
   // already scoped to 1100/1600 upstream).
   function computeDebtorInterest(debtorRows: any) {
-    var result = {
+    var result: any = {
       byChannel: {}, byChannelInterest: {}, byChannelRecordCount: {},
       totalRecordsLoaded: 0, totalOver60Value: 0, totalDebtorInterest: 0
     };
@@ -1125,7 +1126,7 @@
   // filter (same behavior as other uploaded reports); if it doesn't, every row
   // counts regardless of Month, same as Debtor Interest does today.
   function computeInventoryInterest(inventoryRows: any, monthFilter: any) {
-    var result = { byChannelInterest: {}, totalInventoryInterest: 0 };
+    var result: any = { byChannelInterest: {}, totalInventoryInterest: 0 };
     if (!inventoryRows || inventoryRows.length < 2) return result;
     var hm = headerMap(inventoryRows[0]);
     var hasMonthCol = hm['month'] !== undefined;
