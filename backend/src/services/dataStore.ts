@@ -20,6 +20,8 @@ export interface CalcFiles {
   inventoryRows: Rows;
   mm60SurchargePct: number;
   vk13ExchangeRates: AppSettings['vk13ExchangeRates'];
+  /** Month-end rates per month name, overriding the defaults above (e.g. { June: { USD: 300.5 } }). */
+  vk13ExchangeRatesByMonth: Record<string, Record<string, number>>;
 }
 
 export interface DataContext {
@@ -146,8 +148,9 @@ class DataStore {
   }
 
   private async build(): Promise<DataContext> {
-    const [settings, sales, target, expenses, gl, mm60, vk13, costCenters, debtor, inventory, distExclusion] = await Promise.all([
+    const [settings, fxRows, sales, target, expenses, gl, mm60, vk13, costCenters, debtor, inventory, distExclusion] = await Promise.all([
       getSettings(),
+      pool.query('SELECT period, currency, rate FROM period_fx_rates'),
       this.load('sales'),
       this.load('target'),
       this.load('expenses'),
@@ -159,6 +162,11 @@ class DataStore {
       this.load('inventory'),
       this.load('distExclusion')
     ]);
+    const vk13ExchangeRatesByMonth: Record<string, Record<string, number>> = {};
+    for (const r of fxRows.rows) {
+      const month = periodToMonth(r.period);
+      if (month) (vk13ExchangeRatesByMonth[month] ||= {})[r.currency] = Number(r.rate);
+    }
     const files: CalcFiles = {
       salesRows: sales!,
       targetRows: target!,
@@ -171,7 +179,8 @@ class DataStore {
       inventoryRows: inventory!,
       distributorExclusionRows: distExclusion,
       mm60SurchargePct: settings.mm60SurchargePct,
-      vk13ExchangeRates: settings.vk13ExchangeRates
+      vk13ExchangeRates: settings.vk13ExchangeRates,
+      vk13ExchangeRatesByMonth
     };
     const dataset = Calc.buildDataset(files);
     const electricianByMonth: Record<string, number> = {};
@@ -181,7 +190,8 @@ class DataStore {
       if (month) electricianByMonth[month] = Number(r.electrician_point);
     }
     const { rows } = await pool.query(
-      `SELECT GREATEST((SELECT max(uploaded_at) FROM upload_batches), (SELECT max(updated_at) FROM settings)) AS last_updated`
+      `SELECT GREATEST((SELECT max(uploaded_at) FROM upload_batches), (SELECT max(updated_at) FROM settings),
+                       (SELECT max(updated_at) FROM period_fx_rates)) AS last_updated`
     );
     const lastUpdated: Date | null = rows[0].last_updated;
     return { dataset, files, settings, electricianByMonth, lastUpdated: lastUpdated ? lastUpdated.toISOString() : null };

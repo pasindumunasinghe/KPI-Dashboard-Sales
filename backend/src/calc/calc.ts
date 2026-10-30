@@ -389,7 +389,7 @@
   // periods — kept visible in filters/allocation ahead of any data.
   var FUTURE_SUB_CHANNELS = ['Industrial', 'Business Development', 'Solar', 'Online'];
 
-  function aggregateSales(salesRowsRaw: any, mm60FullMap: any, vk13Map: any, mm60SurchargePct: any, vk13MaterialsPresent: any) {
+  function aggregateSales(salesRowsRaw: any, mm60FullMap: any, defaultVK13Map: any, mm60SurchargePct: any, vk13MaterialsPresent: any, vk13MapsByMonth?: any) {
     var agg: any = {};
     var mainChannelsSeen: any = {};
     // Distributor sales split by Bill-to Party — feeds the Distribution Cost
@@ -407,6 +407,7 @@
       var billingDate = col(hm, r, 'Billing Date');
       var month = monthNameFromSerial(billingDate);
       if (!month) continue;
+      var vk13Map = (vk13MapsByMonth && vk13MapsByMonth[month]) || defaultVK13Map;
       var distributionChannel = col(hm, r, 'Distribution Channel');
       var distributionChannel1 = col(hm, r, 'Distribution Channel1');
       var billToParty = col(hm, r, 'Bill-to Party');
@@ -832,9 +833,17 @@
   function buildDataset(files: any) {
     var mm60FullMap = buildMM60FullMap(files.mm60Rows);
     var vk13Result = buildVK13Map(files.vk13Rows, files.vk13ExchangeRates);
+    // Months with their own month-end rates get their own VK13 map: the month's rates
+    // override the defaults per currency; currencies without a month rate keep the default.
+    var vk13MapsByMonth: any = {};
+    Object.keys(files.vk13ExchangeRatesByMonth || {}).forEach(function (month: any) {
+      var monthRates = files.vk13ExchangeRatesByMonth[month];
+      var merged = (files.vk13ExchangeRates || []).concat(Object.keys(monthRates).map(function (c: any) { return { currency: c, rate: monthRates[c] }; }));
+      vk13MapsByMonth[month] = buildVK13Map(files.vk13Rows, merged).map;
+    });
     var glMap = buildGLMap(files.glRows);
     var glNameMap = buildGLNameMap(files.glRows);
-    var salesResult = aggregateSales(files.salesRows, mm60FullMap, vk13Result.map, files.mm60SurchargePct, vk13Result.materialsPresent);
+    var salesResult = aggregateSales(files.salesRows, mm60FullMap, vk13Result.map, files.mm60SurchargePct, vk13Result.materialsPresent, vk13MapsByMonth);
     var targets = aggregateTargets(files.targetRows);
     var ccResult = buildCostCenterMap(files.costCenterRows);
     var ccResultForFilter = ccResult.uniqueCount > 0 ? ccResult : null;

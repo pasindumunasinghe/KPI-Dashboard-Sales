@@ -4,6 +4,7 @@ import type {
   DashboardData,
   DashboardParams,
   ManagedUser,
+  MonthFxRates,
   PeriodsResponse,
   Role,
   SnapshotSummary,
@@ -99,6 +100,10 @@ export const api = {
   periods: () => request<PeriodsResponse>('/periods'),
   lockPeriod: (month: string) => request<{ ok: true }>(`/periods/${encodeURIComponent(month)}/lock`, json('POST', {})),
   unlockPeriod: (month: string, note?: string) => request<{ ok: true }>(`/periods/${encodeURIComponent(month)}/unlock`, json('POST', { note })),
+  fxRates: (month: string) => request<MonthFxRates>(`/periods/${encodeURIComponent(month)}/fx-rates`),
+  fetchFxRates: (month: string) => request<MonthFxRates>(`/periods/${encodeURIComponent(month)}/fx-rates/fetch`, json('POST', {})),
+  setFxRate: (month: string, currency: string, rate: number | null) =>
+    request<MonthFxRates>(`/periods/${encodeURIComponent(month)}/fx-rates/${encodeURIComponent(currency)}`, json('PUT', { rate })),
   setElectricianPoint: (month: string, value: number) =>
     request<{ ok: true }>(`/periods/${encodeURIComponent(month)}/electrician-point`, json('PUT', { value })),
 

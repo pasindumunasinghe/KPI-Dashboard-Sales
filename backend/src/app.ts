@@ -9,6 +9,7 @@ import { dataRouter } from './routes/data';
 import { periodsRouter } from './routes/periods';
 import { uploadsRouter } from './routes/uploads';
 import { PeriodLockedError, PeriodStateError, isPeriodLockDbError } from './services/periods';
+import { FxFetchError } from './services/frankfurter';
 
 export function createApp() {
   const app = express();
@@ -45,6 +46,10 @@ export function createApp() {
     if (isPeriodLockDbError(err)) {
       // Raised by the database trigger as a last line of defence.
       res.status(423).json({ error: 'That month is locked. An administrator must unlock it before its data can be changed.', locked: true });
+      return;
+    }
+    if (err instanceof FxFetchError) {
+      res.status(err.status).json({ error: err.message });
       return;
     }
     if (err instanceof PeriodStateError) {

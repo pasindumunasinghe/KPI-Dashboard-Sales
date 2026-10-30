@@ -150,6 +150,28 @@ export interface AppSettings {
   vk13ExchangeRates: ExchangeRate[];
 }
 
+export interface MonthFxRate {
+  currency: string;
+  /** Rate the calculations use for this month. */
+  rate: number;
+  source: 'cbsl' | 'manual' | 'default';
+  defaultRate: number;
+  cbslRate: number | null;
+  /** Date CBSL published the rate (month-end, or the last business day before it). */
+  rateDate: string | null;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface MonthFxRates {
+  month: string;
+  label: string;
+  monthEnd: string;
+  rates: MonthFxRate[];
+  /** Only on a fetch: currencies CBSL did not publish. */
+  missing?: string[];
+}
+
 export type MonthlyDataset = 'sales' | 'expenses' | 'debtor' | 'inventory';
 
 export interface MonthDatasetInfo {

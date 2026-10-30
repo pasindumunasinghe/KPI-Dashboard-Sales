@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { AppSettings, ExchangeRate, MonthDatasetInfo, PeriodInfo, UploadResult } from '../api/types';
+import type { AppSettings, ExchangeRate, MonthDatasetInfo, MonthFxRate, MonthFxRates, PeriodInfo, UploadResult } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { QueryState } from '../components/QueryState';
 import { MONTHLY_DEFS, REFERENCE_DEFS, type UploadDef } from './uploadDefs';
@@ -52,7 +52,7 @@ function useDebouncedSave<T>(save: (patch: T) => void) {
 function useRefresh() {
   const queryClient = useQueryClient();
   return () => {
-    for (const key of ['uploads', 'periods', 'dashboard', 'comparison', 'ytd']) void queryClient.invalidateQueries({ queryKey: [key] });
+    for (const key of ['uploads', 'periods', 'fx-rates', 'dashboard', 'comparison', 'ytd']) void queryClient.invalidateQueries({ queryKey: [key] });
   };
 }
 
@@ -88,7 +88,7 @@ function ExchangeRateBox({ settings, save }: { settings: AppSettings; save: (p: 
   const update = (next: ExchangeRate[]) => { setRates(next); debounced({ vk13ExchangeRates: next }); };
   return (
     <div className="settings-box">
-      <div className="settings-label">Currency Exchange Rate Setup</div>
+      <div className="settings-label">Default Exchange Rates</div>
       {rates.map((r, i) => (
         <div className="rate-row" key={i}>
           <input className="num-input cur" value={r.currency} placeholder="Currency" onChange={(e) => update(rates.map((x, j) => (j === i ? { ...x, currency: e.target.value.toUpperCase() } : x)))} />
@@ -97,7 +97,7 @@ function ExchangeRateBox({ settings, save }: { settings: AppSettings; save: (p: 
         </div>
       ))}
       <button className="link-btn" onClick={() => update([...rates, { currency: '', rate: '0.00' }])}>+ Add Currency</button>
-      <div className="settings-hint">Applied to non-LKR VK13 rows before COGS, per each row's actual currency: LKR Amount = Amount × Exchange Rate for that currency, then Local Currency Price = LKR Amount ÷ per. LKR-priced rows are unaffected. Update whenever VK13 data or rates change.</div>
+      <div className="settings-hint">Applied to non-LKR VK13 rows before COGS, per each row's actual currency: LKR Amount = Amount × Exchange Rate for that currency, then Local Currency Price = LKR Amount ÷ per. LKR-priced rows are unaffected. These currencies are the ones fetched from CBSL for each month; a month's own rates (under Monthly data) take precedence, and these defaults apply only where a month has none.</div>
     </div>
   );
 }
@@ -299,6 +299,122 @@ function ElectricianPointBox({ period }: { period: PeriodInfo }) {
   );
 }
 
+const SOURCE_LABEL: Record<MonthFxRate['source'], string> = { cbsl: 'CBSL', manual: 'Manual', default: 'Default' };
+
+function FxRateRow({ period, r, editable, onSave, saving }: {
+  period: PeriodInfo;
+  r: MonthFxRate;
+  editable: boolean;
+  onSave: (rate: number | null) => void;
+  saving: boolean;
+}) {
+  const [value, setValue] = useState(String(r.rate));
+  useEffect(() => setValue(String(r.rate)), [period.month, r.rate]);
+  function commit() {
+    const n = parseFloat(value);
+    if (!(n > 0)) { setValue(String(r.rate)); return; }
+    if (n !== r.rate) onSave(n);
+  }
+  return (
+    <tr>
+      <td>{r.currency}</td>
+      <td>{r.cbslRate !== null ? `${r.cbslRate}${r.rateDate ? ` (${r.rateDate})` : ''}` : '—'}</td>
+      <td>
+        <input
+          className="num-input w100"
+          type="number"
+          step="0.0001"
+          min="0"
+          aria-label={`${r.currency} rate for ${period.label}`}
+          disabled={!editable || saving}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        />
+      </td>
+      <td>{SOURCE_LABEL[r.source]}{r.updatedBy && r.source !== 'default' ? ` · ${r.updatedBy}` : ''}</td>
+      <td>
+        {editable && r.source === 'manual' && (
+          <button className="link-btn" disabled={saving} onClick={() => onSave(null)}>
+            {r.cbslRate !== null ? 'Use CBSL rate' : 'Use default'}
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function FxRatesBox({ period }: { period: PeriodInfo }) {
+  const { canManageData } = useAuth();
+  const queryClient = useQueryClient();
+  const refresh = useRefresh();
+  const locked = period.status === 'locked';
+  const editable = canManageData && !locked;
+  const rates = useQuery({ queryKey: ['fx-rates', period.month], queryFn: () => api.fxRates(period.month) });
+  const [message, setMessage] = useState<{ kind: 'error' | 'success' | 'notice'; text: string } | null>(null);
+  useEffect(() => setMessage(null), [period.month]);
+
+  const onDone = (data: MonthFxRates) => {
+    queryClient.setQueryData(['fx-rates', period.month], data);
+    refresh();
+  };
+  const fetchRates = useMutation({
+    mutationFn: () => api.fetchFxRates(period.month),
+    onSuccess: (data) => {
+      onDone(data);
+      const missing = data.missing ?? [];
+      setMessage(missing.length
+        ? { kind: 'notice', text: `CBSL rates fetched. CBSL publishes no rate for ${missing.join(', ')}: enter ${missing.length === 1 ? 'it' : 'them'} by hand.` }
+        : { kind: 'success', text: 'CBSL rates fetched. Manual rates were kept.' });
+    },
+    onError: (e) => setMessage({ kind: 'error', text: errorText(e) })
+  });
+  const save = useMutation({
+    mutationFn: ({ currency, rate }: { currency: string; rate: number | null }) => api.setFxRate(period.month, currency, rate),
+    onSuccess: (data) => { onDone(data); setMessage(null); },
+    onError: (e) => { setMessage({ kind: 'error', text: errorText(e) }); refresh(); }
+  });
+
+  return (
+    <div className="inline-card">
+      <div className="upload-head">
+        <div className="upload-name">Exchange rates — {period.label}</div>
+        {editable && (
+          <button className="btn small" disabled={fetchRates.isPending} onClick={() => fetchRates.mutate()}>
+            {fetchRates.isPending ? 'Fetching…' : 'Fetch from CBSL'}
+          </button>
+        )}
+      </div>
+      <QueryState isLoading={rates.isLoading} error={rates.error}>
+        {rates.data && (
+          <div className="mini-table-wrap" style={{ marginTop: 10 }}>
+            <table className="mini-table">
+              <thead><tr><th>Currency</th><th>CBSL indicative (date)</th><th>Rate used (LKR)</th><th>Source</th><th /></tr></thead>
+              <tbody>
+                {rates.data.rates.map((r) => (
+                  <FxRateRow
+                    key={r.currency}
+                    period={period}
+                    r={r}
+                    editable={editable}
+                    saving={save.isPending}
+                    onSave={(rate) => save.mutate({ currency: r.currency, rate })}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </QueryState>
+      <div className="settings-hint">
+        Converts {period.month}'s non-LKR VK13 prices to LKR. "Fetch from CBSL" loads the CBSL indicative rate for {rates.data?.monthEnd ?? 'the month-end'} (or the last business day before it) via Frankfurter (free, no key). Change a rate to override it; currencies without a month rate use the default rates under VK13.
+      </div>
+      {message && <div className={'msg ' + message.kind} role={message.kind === 'error' ? 'alert' : 'status'}>{message.kind === 'error' ? '⚠ ' : ''}{message.text}</div>}
+    </div>
+  );
+}
+
 function MonthlySection({ periods }: { periods: PeriodInfo[] }) {
   const { canManageData, isAdmin } = useAuth();
   const refresh = useRefresh();
@@ -380,6 +496,7 @@ function MonthlySection({ periods }: { periods: PeriodInfo[] }) {
         ))}
       </div>
       <ElectricianPointBox period={period} />
+      <FxRatesBox period={period} />
     </section>
   );
 }
