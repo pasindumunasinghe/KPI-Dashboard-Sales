@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { AppSettings, ExchangeRate, MonthDatasetInfo, MonthFxRate, MonthFxRates, PeriodInfo, UploadResult } from '../api/types';
+import type { AppSettings, MonthDatasetInfo, MonthFxRate, MonthFxRates, PeriodInfo, UploadResult } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { QueryState } from '../components/QueryState';
 import { MONTHLY_DEFS, REFERENCE_DEFS, type UploadDef } from './uploadDefs';
@@ -82,26 +82,6 @@ function SurchargeBox({ settings, save }: { settings: AppSettings; save: (p: Par
   );
 }
 
-function ExchangeRateBox({ settings, save }: { settings: AppSettings; save: (p: Partial<AppSettings>) => void }) {
-  const [rates, setRates] = useState<ExchangeRate[]>(settings.vk13ExchangeRates);
-  const debounced = useDebouncedSave(save);
-  const update = (next: ExchangeRate[]) => { setRates(next); debounced({ vk13ExchangeRates: next }); };
-  return (
-    <div className="settings-box">
-      <div className="settings-label">Default Exchange Rates</div>
-      {rates.map((r, i) => (
-        <div className="rate-row" key={i}>
-          <input className="num-input cur" value={r.currency} placeholder="Currency" onChange={(e) => update(rates.map((x, j) => (j === i ? { ...x, currency: e.target.value.toUpperCase() } : x)))} />
-          <input className="num-input w100" type="number" step="0.01" value={r.rate} onChange={(e) => update(rates.map((x, j) => (j === i ? { ...x, rate: e.target.value } : x)))} />
-          <button className="btn small" aria-label="Remove currency" onClick={() => update(rates.filter((_, j) => j !== i))}>✕</button>
-        </div>
-      ))}
-      <button className="link-btn" onClick={() => update([...rates, { currency: '', rate: '0.00' }])}>+ Add Currency</button>
-      <div className="settings-hint">Applied to non-LKR VK13 rows before COGS, per each row's actual currency: LKR Amount = Amount × Exchange Rate for that currency, then Local Currency Price = LKR Amount ÷ per. LKR-priced rows are unaffected. These currencies are the ones fetched from CBSL for each month; a month's own rates (under Monthly data) take precedence, and these defaults apply only where a month has none.</div>
-    </div>
-  );
-}
-
 function ReferenceCard({ def, settings, saveSettings }: { def: UploadDef; settings: AppSettings; saveSettings: (p: Partial<AppSettings>) => void }) {
   const refresh = useRefresh();
   const status = useQuery({ queryKey: ['uploads'], queryFn: api.uploads });
@@ -166,7 +146,6 @@ function ReferenceCard({ def, settings, saveSettings }: { def: UploadDef; settin
       )}
       {def.key === 'costCenters' && !validation && <div className="msg notice">Upload a valid Cost Centers file before calculating Product Company expenses.</div>}
 
-      {def.showExchangeRateInput && <ExchangeRateBox settings={settings} save={saveSettings} />}
       {def.showSurchargeInput && <SurchargeBox settings={settings} save={saveSettings} />}
 
       {preview && (
@@ -299,7 +278,7 @@ function ElectricianPointBox({ period }: { period: PeriodInfo }) {
   );
 }
 
-const SOURCE_LABEL: Record<MonthFxRate['source'], string> = { cbsl: 'CBSL', manual: 'Manual', default: 'Default' };
+const SOURCE_LABEL: Record<MonthFxRate['source'], string> = { cbsl: 'CBSL', manual: 'Manual', default: 'Default', none: 'No rate' };
 
 function FxRateRow({ period, r, editable, onSave, saving }: {
   period: PeriodInfo;
@@ -308,11 +287,12 @@ function FxRateRow({ period, r, editable, onSave, saving }: {
   onSave: (rate: number | null) => void;
   saving: boolean;
 }) {
-  const [value, setValue] = useState(String(r.rate));
-  useEffect(() => setValue(String(r.rate)), [period.month, r.rate]);
+  const shown = r.rate === null ? '' : String(r.rate);
+  const [value, setValue] = useState(shown);
+  useEffect(() => setValue(shown), [period.month, shown]);
   function commit() {
     const n = parseFloat(value);
-    if (!(n > 0)) { setValue(String(r.rate)); return; }
+    if (!(n > 0)) { setValue(shown); return; }
     if (n !== r.rate) onSave(n);
   }
   return (
@@ -327,17 +307,18 @@ function FxRateRow({ period, r, editable, onSave, saving }: {
           min="0"
           aria-label={`${r.currency} rate for ${period.label}`}
           disabled={!editable || saving}
+          placeholder="Enter rate"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         />
       </td>
-      <td>{SOURCE_LABEL[r.source]}{r.updatedBy && r.source !== 'default' ? ` · ${r.updatedBy}` : ''}</td>
+      <td className={r.source === 'none' ? 'neg' : undefined}>{SOURCE_LABEL[r.source]}{r.updatedBy && r.source !== 'default' ? ` · ${r.updatedBy}` : ''}</td>
       <td>
         {editable && r.source === 'manual' && (
           <button className="link-btn" disabled={saving} onClick={() => onSave(null)}>
-            {r.cbslRate !== null ? 'Use CBSL rate' : 'Use default'}
+            {r.cbslRate !== null ? 'Use CBSL rate' : r.defaultRate !== null ? 'Use default' : 'Clear'}
           </button>
         )}
       </td>
@@ -354,6 +335,7 @@ function FxRatesBox({ period }: { period: PeriodInfo }) {
   const rates = useQuery({ queryKey: ['fx-rates', period.month], queryFn: () => api.fxRates(period.month) });
   const [message, setMessage] = useState<{ kind: 'error' | 'success' | 'notice'; text: string } | null>(null);
   useEffect(() => setMessage(null), [period.month]);
+  const noRate = (rates.data?.rates ?? []).filter((r) => r.inVk13 && r.source === 'none').map((r) => r.currency);
 
   const onDone = (data: MonthFxRates) => {
     queryClient.setQueryData(['fx-rates', period.month], data);
@@ -387,7 +369,16 @@ function FxRatesBox({ period }: { period: PeriodInfo }) {
         )}
       </div>
       <QueryState isLoading={rates.isLoading} error={rates.error}>
-        {rates.data && (
+        {noRate.length > 0 && (
+          <div className="msg notice" role="status" style={{ marginTop: 10 }}>
+            ⚠ VK13 prices in {noRate.join(', ')} have no rate for {period.label}, so they are counted as LKR.
+            {editable ? ' Click "Fetch from CBSL" or enter the rate.' : ''}
+          </div>
+        )}
+        {rates.data && rates.data.rates.length === 0 && (
+          <div className="settings-hint">No foreign-currency prices: upload VK13 to see its currencies here.</div>
+        )}
+        {rates.data && rates.data.rates.length > 0 && (
           <div className="mini-table-wrap" style={{ marginTop: 10 }}>
             <table className="mini-table">
               <thead><tr><th>Currency</th><th>CBSL indicative (date)</th><th>Rate used (LKR)</th><th>Source</th><th /></tr></thead>
@@ -408,7 +399,7 @@ function FxRatesBox({ period }: { period: PeriodInfo }) {
         )}
       </QueryState>
       <div className="settings-hint">
-        Converts {period.month}'s non-LKR VK13 prices to LKR. "Fetch from CBSL" loads the CBSL indicative rate for {rates.data?.monthEnd ?? 'the month-end'} (or the last business day before it) via Frankfurter (free, no key). Change a rate to override it; currencies without a month rate use the default rates under VK13.
+        Converts {period.month}'s non-LKR VK13 prices to LKR. "Fetch from CBSL" loads the CBSL indicative rate for {rates.data?.monthEnd ?? 'the month-end'} (or the last business day before it) via Frankfurter (free, no key). It covers every currency in the uploaded VK13 prices. Change a rate to override it.
       </div>
       {message && <div className={'msg ' + message.kind} role={message.kind === 'error' ? 'alert' : 'status'}>{message.kind === 'error' ? '⚠ ' : ''}{message.text}</div>}
     </div>

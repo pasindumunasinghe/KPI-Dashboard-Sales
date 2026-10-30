@@ -152,10 +152,12 @@ export interface AppSettings {
 
 export interface MonthFxRate {
   currency: string;
-  /** Rate the calculations use for this month. */
-  rate: number;
-  source: 'cbsl' | 'manual' | 'default';
-  defaultRate: number;
+  /** Rate the calculations use for this month (null: none, so VK13 prices in it are taken as LKR). */
+  rate: number | null;
+  source: 'cbsl' | 'manual' | 'default' | 'none';
+  defaultRate: number | null;
+  /** The uploaded VK13 prices use this currency. */
+  inVk13: boolean;
   cbslRate: number | null;
   /** Date CBSL published the rate (month-end, or the last business day before it). */
   rateDate: string | null;

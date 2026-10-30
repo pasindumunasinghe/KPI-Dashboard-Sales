@@ -7,11 +7,16 @@ import { getSettings, type ExchangeRate } from './settings';
 
 export interface MonthFxRate {
   currency: string;
-  /** Rate the calculations use for this month. */
-  rate: number;
-  /** cbsl = CBSL indicative rate, manual = user override, default = no month rate (settings default). */
-  source: 'cbsl' | 'manual' | 'default';
-  defaultRate: number;
+  /** Rate the calculations use for this month (null: none, so VK13 prices in it are taken as LKR). */
+  rate: number | null;
+  /**
+   * cbsl = CBSL indicative rate, manual = user override, default = no month rate (settings default),
+   * none = a VK13 currency with no month or default rate.
+   */
+  source: 'cbsl' | 'manual' | 'default' | 'none';
+  defaultRate: number | null;
+  /** The uploaded VK13 prices use this currency. */
+  inVk13: boolean;
   cbslRate: number | null;
   /** Date CBSL published `cbslRate` (the month-end, or the last business day before it). */
   rateDate: string | null;
@@ -41,6 +46,14 @@ function requireMonth(monthName: string): FiscalMonth {
   return month;
 }
 
+/** Currencies the uploaded VK13 prices are in, excluding LKR. */
+async function vk13Currencies(): Promise<string[]> {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT upper(trim(currency)) AS c FROM vk13_pricing WHERE currency IS NOT NULL AND trim(currency) NOT IN ('', 'LKR') ORDER BY 1`
+  );
+  return rows.map((r) => r.c as string).filter((c) => c !== 'LKR');
+}
+
 /** Currencies with a default rate in settings (LKR needs no conversion). */
 function defaultRateMap(defaults: ExchangeRate[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -53,8 +66,9 @@ function defaultRateMap(defaults: ExchangeRate[]): Map<string, number> {
 
 export async function getMonthRates(monthName: string): Promise<MonthFxRates> {
   const month = requireMonth(monthName);
-  const [settings, { rows }] = await Promise.all([
+  const [settings, vk13, { rows }] = await Promise.all([
     getSettings(),
+    vk13Currencies(),
     pool.query(
       `SELECT r.currency, r.rate, r.source, r.cbsl_rate, r.rate_date::text AS rate_date, r.updated_at, u.name AS updated_by
          FROM period_fx_rates r LEFT JOIN users u ON u.id = r.updated_by
@@ -64,19 +78,20 @@ export async function getMonthRates(monthName: string): Promise<MonthFxRates> {
   ]);
   const defaults = defaultRateMap(settings.vk13ExchangeRates);
   const stored = new Map(rows.map((r) => [r.currency as string, r]));
-  const currencies = [...new Set([...defaults.keys(), ...stored.keys()])];
+  const currencies = [...new Set([...vk13, ...defaults.keys(), ...stored.keys()])];
   return {
     month: month.month,
     label: month.label,
     monthEnd: lastDayOf(month),
     rates: currencies.map((currency) => {
       const r = stored.get(currency);
-      const defaultRate = defaults.get(currency) ?? 0;
+      const defaultRate = defaults.get(currency) ?? null;
       return {
         currency,
         rate: r ? Number(r.rate) : defaultRate,
-        source: r ? r.source : 'default',
+        source: r ? r.source : defaultRate !== null ? 'default' : 'none',
         defaultRate,
+        inVk13: vk13.includes(currency),
         cbslRate: r?.cbsl_rate != null ? Number(r.cbsl_rate) : null,
         rateDate: r?.rate_date ?? null,
         updatedBy: r?.updated_by ?? null,
@@ -87,8 +102,9 @@ export async function getMonthRates(monthName: string): Promise<MonthFxRates> {
 }
 
 /**
- * Fetches the CBSL indicative rates for the month-end and stores them for every currency
- * that has a default rate. Manual overrides are kept; only their CBSL reference is updated.
+ * Fetches the CBSL indicative rates for the month-end and stores them for every currency the
+ * VK13 prices use, plus any with a default rate. Manual overrides are kept; only their CBSL
+ * reference is updated.
  */
 export async function fetchMonthRates(monthName: string, userId: number): Promise<{ missing: string[] }> {
   const month = requireMonth(monthName);
@@ -96,9 +112,11 @@ export async function fetchMonthRates(monthName: string, userId: number): Promis
   if (monthEnd > new Date().toISOString().slice(0, 10)) {
     throw new PeriodStateError(`The month-end rate for ${month.label} is available from ${monthEnd}.`, 422);
   }
-  const settings = await getSettings();
-  const currencies = [...defaultRateMap(settings.vk13ExchangeRates).keys()];
-  if (!currencies.length) throw new PeriodStateError('Add at least one currency to the default exchange rates first.', 422);
+  const [settings, vk13] = await Promise.all([getSettings(), vk13Currencies()]);
+  const currencies = [...new Set([...vk13, ...defaultRateMap(settings.vk13ExchangeRates).keys()])];
+  if (!currencies.length) {
+    throw new PeriodStateError('No foreign currencies to fetch: upload VK13 (or add a currency to the default exchange rates) first.', 422);
+  }
 
   // Call the API before taking the month's row lock.
   const fetched = await fetchCbslRates(currencies, monthEnd);

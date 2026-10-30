@@ -10,7 +10,6 @@ export interface UploadDef {
   /** Uploaded for one chosen month (and lockable); otherwise reference data. */
   monthly?: boolean;
   showSurchargeInput?: boolean;
-  showExchangeRateInput?: boolean;
 }
 
 const XLSX = '.xlsx,.xls';
@@ -45,7 +44,7 @@ export const UPLOAD_DEFS: UploadDef[] = [
     sample: [['100-0110', 'B142', 'ROH', '...', '245.00'], ['100-0230', 'H105', 'FERT', '...', '1,120.00']]
   },
   {
-    key: 'vk13', label: 'VK13 Pricing', cadence: 'Yearly upload', accept: XLSX, showExchangeRateInput: true,
+    key: 'vk13', label: 'VK13 Pricing', cadence: 'Yearly upload', accept: XLSX,
     columns: ['Material', 'Amount', 'Unit', 'UoM'],
     sample: [['100-0110', '168.92', '1', 'PC'], ['100-0230', '640.60', '1', 'PC']],
     note: 'Used only for materials whose MM60 Material Type is FERT or HALB. Also accepts a raw VK13 SAP export (title/blank rows, padded header) — it is auto-detected and normalized. LKR rows: Local Currency Price = Amount ÷ per. Non-LKR rows: converted first using the VK13 Exchange Rate below.'
